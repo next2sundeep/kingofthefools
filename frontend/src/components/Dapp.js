@@ -6,6 +6,7 @@ import { ethers } from "ethers";
 // We import the contract's artifacts and address here, as we are going to be
 // using them with ethers
 import TokenArtifact from "../contracts/Token.json";
+import KingArtifact from "../contracts/KingOfFools.json";
 import contractAddress from "../contracts/contract-address.json";
 
 // All the logic of this dapp is contained in the Dapp component.
@@ -22,7 +23,7 @@ import { NoTokensMessage } from "./NoTokensMessage";
 // This is the Hardhat Network id that we set in our hardhat.config.js.
 // Here's a list of network ids https://docs.metamask.io/guide/ethereum-provider.html#properties
 // to use when deploying to other networks.
-const HARDHAT_NETWORK_ID = '1337';
+const HARDHAT_NETWORK_ID = '5';
 
 // This is an error code that indicates that the user canceled a transaction
 const ERROR_CODE_TX_REJECTED_BY_USER = 4001;
@@ -53,6 +54,9 @@ export class Dapp extends React.Component {
       txBeingSent: undefined,
       transactionError: undefined,
       networkError: undefined,
+      eth_balance: undefined,
+      currentking:undefined,
+      current_balance:undefined,
     };
 
     this.state = this.initialState;
@@ -94,14 +98,31 @@ export class Dapp extends React.Component {
         <div className="row">
           <div className="col-12">
             <h1>
-              {this.state.tokenData.name} ({this.state.tokenData.symbol})
+              Welcome to King of the Fools
             </h1>
             <p>
-              Welcome <b>{this.state.selectedAddress}</b>, you have{" "}
+              Connected wallet <b>{this.state.selectedAddress}</b>, your ETH balance{" "}
               <b>
-                {this.state.balance.toString()} {this.state.tokenData.symbol}
+              {this.state.eth_balance.toString()} ETH{}
               </b>
               .
+            </p>
+            <p>
+             Your token balance{" "}
+             <b>
+                {this.state.balance.toString()} {this.state.tokenData.symbol}
+              </b>
+
+             <p>
+              Current king is <b>{this.state.currentking}</b> and his balance is{" "} 
+              <b>
+               {this.state.current_balance.toString()} ETH{}
+              </b>
+              <p>
+                Deposit any value greater than {(1.5*this.state.current_balance.toString()).toFixed(6)} to become the new king
+              </p>
+            </p>
+
             </p>
           </div>
         </div>
@@ -149,8 +170,8 @@ export class Dapp extends React.Component {
             */}
             {this.state.balance.gt(0) && (
               <Transfer
-                transferTokens={(to, amount) =>
-                  this._transferTokens(to, amount)
+                transferTokens={( amount) =>
+                  this._transferTokens(amount)
                 }
                 tokenSymbol={this.state.tokenData.symbol}
               />
@@ -234,6 +255,12 @@ export class Dapp extends React.Component {
       TokenArtifact.abi,
       this._provider.getSigner(0)
     );
+    this._kingoffools = new ethers.Contract(
+      contractAddress.KingOfFools,
+      KingArtifact.abi,
+      this._provider.getSigner(0)
+    );
+    
   }
 
   // The next two methods are needed to start and stop polling data. While
@@ -261,18 +288,31 @@ export class Dapp extends React.Component {
     const name = await this._token.name();
     const symbol = await this._token.symbol();
 
+
     this.setState({ tokenData: { name, symbol } });
   }
 
   async _updateBalance() {
     const balance = await this._token.balanceOf(this.state.selectedAddress);
-    this.setState({ balance });
+    let eth_balance = await this._provider.getBalance(this.state.selectedAddress).then((balance) => {
+      // convert a currency unit from wei to ether
+      return ethers.utils.formatEther(balance)
+      // console.log(`balance: ${balanceInEth} ETH`)
+     })
+     let currentking = await this._kingoffools.king();
+     let current_balance = await this._kingoffools.deposits().then((balance) => {
+       // convert a currency unit from wei to ether
+       return ethers.utils.formatEther(balance)
+       // console.log(`balance: ${balanceInEth} ETH`)
+      })
+    // eth_balance = await ethers.utils.formatEther(eth_balance);
+    this.setState({ balance,eth_balance ,currentking,current_balance});
   }
 
   // This method sends an ethereum transaction to transfer tokens.
   // While this action is specific to this application, it illustrates how to
   // send a transaction.
-  async _transferTokens(to, amount) {
+  async _transferTokens(amount) {
     // Sending a transaction is a complex operation:
     //   - The user can reject it
     //   - It can fail before reaching the ethereum network (i.e. if the user
@@ -294,7 +334,8 @@ export class Dapp extends React.Component {
 
       // We send the transaction, and save its hash in the Dapp's state. This
       // way we can indicate that we are waiting for it to be mined.
-      const tx = await this._token.transfer(to, amount);
+      const EtherToWei = ethers.utils.parseUnits(amount,"ether")
+      const tx = await this._kingoffools.becomeKing( EtherToWei,false,{value:EtherToWei});
       this.setState({ txBeingSent: tx.hash });
 
       // We use .wait() to wait for the transaction to be mined. This method
@@ -361,7 +402,7 @@ export class Dapp extends React.Component {
     }
 
     this.setState({ 
-      networkError: 'Please connect Metamask to Localhost:8545'
+      networkError: 'Please connect Metamask to Goerli'
     });
 
     return false;
